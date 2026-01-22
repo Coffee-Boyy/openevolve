@@ -72,6 +72,25 @@ Full reproducibility, extensive evaluation pipelines, and scientific rigor built
 
 </div>
 
+## 🖥️ Desktop Application
+
+**NEW**: OpenEvolve now includes a fully-featured desktop application with a native TypeScript backend!
+
+- **Native TypeScript Backend** - No Python subprocess, faster IPC communication
+- **PACEvolve Algorithm** - Latest research improvements (HCM, MBB, CE)
+- **Real-time monitoring** of evolution progress
+- **Interactive visualization** with D3.js force-directed graphs
+- **Built-in configuration editor** with syntax highlighting
+- **Cross-platform** support (macOS, Windows, Linux)
+
+[📖 Desktop App Documentation](DESKTOP_APP.md) • [🚀 TypeScript Backend](desktop/src/main/engine/README.md) • [📋 Migration Guide](TYPESCRIPT_MIGRATION.md)
+
+<div align="center">
+<img src="openevolve-visualizer.png" alt="OpenEvolve Desktop" width="700">
+</div>
+
+---
+
 ## 🚀 Quick Start
 
 Get from zero to evolving code in **30 seconds**:

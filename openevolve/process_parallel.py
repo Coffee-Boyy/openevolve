@@ -283,12 +283,14 @@ class ProcessParallelController:
         database: ProgramDatabase,
         evolution_tracer=None,
         file_suffix: str = ".py",
+        controller=None,  # Reference to main controller for progress callbacks
     ):
         self.config = config
         self.evaluation_file = evaluation_file
         self.database = database
         self.evolution_tracer = evolution_tracer
         self.file_suffix = file_suffix
+        self.controller = controller  # Store controller reference
 
         self.executor: Optional[ProcessPoolExecutor] = None
         self.shutdown_event = mp.Event()
@@ -590,6 +592,26 @@ class ProcessParallelController:
                             f"🌟 New best solution found at iteration {completed_iteration}: "
                             f"{child_program.id}"
                         )
+
+                    # Send progress update via controller callback if available
+                    if hasattr(self, 'controller') and hasattr(self.controller, 'progress_callback') and self.controller.progress_callback:
+                        best_program = self.database.get(self.database.best_program_id) if self.database.best_program_id else None
+                        if best_program:
+                            best_score = best_program.metrics.get("combined_score") if best_program.metrics else None
+                            try:
+                                loop = asyncio.get_event_loop()
+                                if loop.is_running():
+                                    asyncio.create_task(self.controller.progress_callback(
+                                        "iteration_update",
+                                        {
+                                            "iteration": completed_iteration,
+                                            "best_score": best_score,
+                                            "metrics": best_program.metrics if best_program.metrics else {},
+                                            "best_program_id": best_program.id,
+                                        }
+                                    ))
+                            except Exception as e:
+                                logger.error(f"Error calling progress callback: {e}")
 
                     # Checkpoint callback
                     # Don't checkpoint at iteration 0 (that's just the initial program)

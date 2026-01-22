@@ -20,6 +20,10 @@ class LLMEnsemble:
     def __init__(self, models_cfg: List[LLMModelConfig]):
         self.models_cfg = models_cfg
 
+        # Validate that we have at least one model
+        if not models_cfg:
+            raise ValueError("LLMEnsemble requires at least one model configuration")
+
         # Initialize models from the configuration
         self.models = [
             model_cfg.init_client(model_cfg) if model_cfg.init_client else OpenAILLM(model_cfg)
@@ -29,6 +33,8 @@ class LLMEnsemble:
         # Extract and normalize model weights
         self.weights = [model.weight for model in models_cfg]
         total = sum(self.weights)
+        if total == 0:
+            raise ValueError("Total model weights cannot be zero")
         self.weights = [w / total for w in self.weights]
 
         # Set up random state for deterministic model selection
@@ -69,6 +75,9 @@ class LLMEnsemble:
 
     def _sample_model(self) -> LLMInterface:
         """Sample a model from the ensemble based on weights"""
+        if not self.models:
+            raise ValueError("No models available in ensemble")
+        
         index = self.random_state.choices(range(len(self.models)), weights=self.weights, k=1)[0]
         sampled_model = self.models[index]
         logger.info(f"Sampled model: {vars(sampled_model)['model']}")

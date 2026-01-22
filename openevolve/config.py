@@ -2,6 +2,7 @@
 Configuration handling for OpenEvolve
 """
 
+import logging
 import os
 import re
 from dataclasses import asdict, dataclass, field
@@ -10,6 +11,8 @@ from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Union
 
 import dacite
 import yaml
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from openevolve.llm.base import LLMInterface
@@ -52,9 +55,9 @@ class LLMModelConfig:
     """Configuration for a single LLM model"""
 
     # API configuration
-    api_base: str = None
+    api_base: Optional[str] = None
     api_key: Optional[str] = None
-    name: str = None
+    name: Optional[str] = None
 
     # Custom LLM client
     init_client: Optional[Callable] = None
@@ -64,14 +67,14 @@ class LLMModelConfig:
 
     # Generation parameters
     system_message: Optional[str] = None
-    temperature: float = None
-    top_p: float = None
-    max_tokens: int = None
+    temperature: Optional[float] = None
+    top_p: Optional[float] = None
+    max_tokens: Optional[int] = None
 
     # Request parameters
-    timeout: int = None
-    retries: int = None
-    retry_delay: int = None
+    timeout: Optional[int] = None
+    retries: Optional[int] = None
+    retry_delay: Optional[int] = None
 
     # Reproducibility
     random_seed: Optional[int] = None
@@ -109,10 +112,10 @@ class LLMConfig(LLMModelConfig):
     evaluator_models: List[LLMModelConfig] = field(default_factory=lambda: [])
 
     # Backwardes compatibility with primary_model(_weight) options
-    primary_model: str = None
-    primary_model_weight: float = None
-    secondary_model: str = None
-    secondary_model_weight: float = None
+    primary_model: Optional[str] = None
+    primary_model_weight: Optional[float] = None
+    secondary_model: Optional[str] = None
+    secondary_model_weight: Optional[float] = None
 
     # Reasoning parameters (inherited from LLMModelConfig but can be overridden)
     reasoning_effort: Optional[str] = None
@@ -142,18 +145,18 @@ class LLMConfig(LLMModelConfig):
                 )
                 self.models.append(secondary_model)
 
-        # Only validate if this looks like a user config (has some model info)
-        # Don't validate during internal/default initialization
-        if (
-            self.primary_model
-            or self.secondary_model
-            or self.primary_model_weight
-            or self.secondary_model_weight
-        ) and not self.models:
-            raise ValueError(
-                "No LLM models configured. Please specify 'models' array or "
-                "'primary_model' in your configuration."
+        # Ensure at least one model is configured
+        if not self.models:
+            # If no models are configured, create a default model
+            logger.warning(
+                "No LLM models configured. Using default model 'gpt-4o-mini'. "
+                "Please configure models in your config file."
             )
+            default_model = LLMModelConfig(
+                name="gpt-4o-mini",
+                weight=1.0,
+            )
+            self.models.append(default_model)
 
         # If no evaluator models are defined, use the same models as for evolution
         if not self.evaluator_models:
@@ -387,7 +390,7 @@ class Config:
     log_level: str = "INFO"
     log_dir: Optional[str] = None
     random_seed: Optional[int] = 42
-    language: str = None
+    language: str = "python"
     file_suffix: str = ".py"
 
     # Component configurations

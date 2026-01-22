@@ -54,3 +54,7 @@ htmlcov/
 # For SR
 secrets.yaml
 problems
+
+node_modules/
+dist-electron/
+python-venv/

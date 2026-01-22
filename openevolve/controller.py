@@ -72,6 +72,7 @@ class OpenEvolve:
         evaluation_file: str,
         config: Config,
         output_dir: Optional[str] = None,
+        progress_callback: Optional[callable] = None,
     ):
         # Load configuration (loaded in main_async)
         self.config = config
@@ -81,6 +82,9 @@ class OpenEvolve:
             os.path.dirname(initial_program_path), "openevolve_output"
         )
         os.makedirs(self.output_dir, exist_ok=True)
+        
+        # Progress callback for real-time updates (e.g., WebSocket broadcasting)
+        self.progress_callback = progress_callback
 
         # Set up logging
         self._setup_logging()
@@ -299,6 +303,7 @@ class OpenEvolve:
                 self.database,
                 self.evolution_tracer,
                 file_suffix=self.config.file_suffix,
+                controller=self,  # Pass controller reference for progress callbacks
             )
 
             # Set up signal handlers for graceful shutdown
@@ -458,6 +463,36 @@ class OpenEvolve:
                 f"Saved best program at checkpoint {iteration} with metrics: "
                 f"{format_metrics_safe(best_program.metrics)}"
             )
+            
+            # Send progress update via callback if available
+            if self.progress_callback:
+                best_score = best_program.metrics.get("combined_score")
+                try:
+                    # Schedule the callback as a task if we're in an async context
+                    loop = asyncio.get_event_loop()
+                    if loop.is_running():
+                        asyncio.create_task(self.progress_callback(
+                            "iteration_update",
+                            {
+                                "iteration": iteration,
+                                "best_score": best_score,
+                                "metrics": best_program.metrics,
+                                "best_program_id": best_program.id,
+                            }
+                        ))
+                    else:
+                        # If loop isn't running, run it synchronously
+                        loop.run_until_complete(self.progress_callback(
+                            "iteration_update",
+                            {
+                                "iteration": iteration,
+                                "best_score": best_score,
+                                "metrics": best_program.metrics,
+                                "best_program_id": best_program.id,
+                            }
+                        ))
+                except Exception as e:
+                    logger.error(f"Error calling progress callback: {e}")
 
         logger.info(f"Saved checkpoint at iteration {iteration} to {checkpoint_path}")
 

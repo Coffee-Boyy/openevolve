@@ -1,0 +1,74 @@
+appId: com.openevolve.desktop
+productName: OpenEvolve
+copyright: Copyright © 2024 OpenEvolve Contributors
+directories:
+  output: release/${version}
+  buildResources: resources
+files:
+  - dist
+  - dist-electron
+  - package.json
+mac:
+  category: public.app-category.developer-tools
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+    - target: zip
+      arch:
+        - x64
+        - arm64
+  icon: resources/icon.icns
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+    - target: portable
+      arch:
+        - x64
+  icon: resources/icon.ico
+  artifactName: ${productName}-${version}-${arch}.${ext}
+linux:
+  target:
+    - target: AppImage
+      arch:
+        - x64
+    - target: deb
+      arch:
+        - x64
+    - target: rpm
+      arch:
+        - x64
+  icon: resources/icon.png
+  category: Development
+  maintainer: openevolve@example.com
+  description: OpenEvolve - Evolutionary Coding with LLMs
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
+  shortcutName: OpenEvolve
+dmg:
+  icon: resources/icon.icns
+  background: resources/dmg-background.png
+  window:
+    width: 540
+    height: 380
+  contents:
+    - x: 140
+      y: 180
+    - x: 380
+      y: 180
+      type: link
+      path: /Applications
+publish:
+  provider: github
+  owner: algorithmicsuperintelligence
+  repo: openevolve
