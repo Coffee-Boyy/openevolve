@@ -7,6 +7,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   startEvolution: (options: any) => ipcRenderer.invoke('evolution:start', options),
   stopEvolution: (runId: string) => ipcRenderer.invoke('evolution:stop', runId),
   getEvolutionStatus: (runId: string) => ipcRenderer.invoke('evolution:getStatus', runId),
+  getEvolutionData: (runId: string) => ipcRenderer.invoke('evolution:getData', runId),
+  getEvolutionLogs: (runId: string) => ipcRenderer.invoke('evolution:getLogs', runId),
+  getProgramDetails: (runId: string, programId: string) => ipcRenderer.invoke('evolution:getProgram', runId, programId),
   
   // Evolution events
   onEvolutionProgress: (callback: (data: any) => void) => {
@@ -77,6 +80,9 @@ export interface ElectronAPI {
   startEvolution: (options: any) => Promise<{ runId: string; status: string }>;
   stopEvolution: (runId: string) => Promise<{ status: string }>;
   getEvolutionStatus: (runId: string) => Promise<any>;
+  getEvolutionData: (runId: string) => Promise<any>;
+  getEvolutionLogs: (runId: string) => Promise<any>;
+  getProgramDetails: (runId: string, programId: string) => Promise<any>;
   onEvolutionProgress: (callback: (data: any) => void) => () => void;
   onEvolutionStatus: (callback: (data: any) => void) => () => void;
   onEvolutionComplete: (callback: (data: any) => void) => () => void;

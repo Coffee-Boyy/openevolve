@@ -20,17 +20,19 @@ The engine implements three key components from the PACEvolve paper (arXiv:2601.
 
 1. **Hierarchical Context Management (HCM)** (`pacevolve/context-manager.ts`)
    - Decouples idea generation from selection
-   - Maintains hierarchical "idea memory" with pruning
+   - Maintains hierarchical idea clusters with hypothesis memory
+   - Prunes low-signal hypotheses and stale ideas
+   - Tracks distinct ideas to reduce context pollution
    - Reduces context pollution over long evolution runs
 
 2. **Momentum-Based Backtracking (MBB)** (`pacevolve/backtracking.ts`)
-   - Tracks improvement momentum over recent iterations
+   - Tracks relative progress momentum via EWMA
    - Detects stagnation and local minima
-   - Backtracks to previous promising states when stuck
+   - Samples backtrack targets with a power-law bias toward recent states
 
 3. **Self-Adaptive Collaborative Evolution (CE)** (`pacevolve/collaborative.ts`)
    - Coordinates parallel search across islands
-   - Dynamic crossover between trajectories
+   - Dynamic crossover between trajectories using absolute progress
    - Adaptive sampling policy (explore/exploit/backtrack)
 
 ## Configuration
@@ -68,6 +70,13 @@ pacevolve:
   enable_mbb: true
   enable_ce: true
   momentum_window_size: 10
+  momentum_beta: 0.9
+  backtrack_power: 1.5
+  max_ideas: 20
+  max_hypotheses_per_idea: 10
+  idea_distinctness_threshold: 0.75
+  idea_summary_max_chars: 280
+  hypothesis_summary_max_chars: 180
   crossover_frequency: 20
 ```
 

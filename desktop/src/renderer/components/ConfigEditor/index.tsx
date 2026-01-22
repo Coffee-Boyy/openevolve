@@ -4,7 +4,7 @@ import { useAppStore } from '../../store/appStore';
 import * as yaml from 'js-yaml';
 
 export default function ConfigEditor() {
-  const { apiClient, theme } = useAppStore();
+  const { apiClient, theme, configPath, setConfigPath } = useAppStore();
   const [config, setConfig] = useState<string>('');
   const [originalConfig, setOriginalConfig] = useState<string>('');
   const [loading, setLoading] = useState(false);
@@ -42,6 +42,10 @@ export default function ConfigEditor() {
     setError(null);
 
     try {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/0967f0db-dd0f-4f07-b0e8-2fd7aeec4c88',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ConfigEditor/index.tsx:46',message:'handleSave called',data:{hasApiClient:!!apiClient,configLength:config.length,configPath:configPath},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
+      
       // Parse YAML to validate
       const configObj = yaml.load(config);
       
@@ -49,11 +53,41 @@ export default function ConfigEditor() {
         throw new Error('Invalid configuration format');
       }
 
+      // If no config path, prompt user to select one
+      let savePath = configPath;
+      if (!savePath) {
+        savePath = await window.electronAPI.saveFileDialog({
+          filters: [{ name: 'YAML Files', extensions: ['yaml', 'yml'] }],
+          defaultPath: 'config.yaml',
+        });
+
+        if (!savePath) {
+          setLoading(false);
+          return; // User cancelled
+        }
+
+        // Save the path for future saves
+        setConfigPath(savePath);
+      }
+
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/0967f0db-dd0f-4f07-b0e8-2fd7aeec4c88',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ConfigEditor/index.tsx:73',message:'Before updateConfig call',data:{configObjKeys:Object.keys(configObj),savePath:savePath,hasConfigPath:!!savePath},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'A,C'})}).catch(()=>{});
+      // #endregion
+
       // Update configuration
-      await apiClient.updateConfig(configObj as any);
+      await apiClient.updateConfig(configObj as any, savePath);
+      
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/0967f0db-dd0f-4f07-b0e8-2fd7aeec4c88',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ConfigEditor/index.tsx:79',message:'After updateConfig call - success',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
+      
       setOriginalConfig(config);
       setIsDirty(false);
     } catch (err: any) {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/0967f0db-dd0f-4f07-b0e8-2fd7aeec4c88',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ConfigEditor/index.tsx:87',message:'updateConfig failed',data:{errorMessage:err.message,errorStack:err.stack},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'A,D'})}).catch(()=>{});
+      // #endregion
+      
       setError(err.message || 'Failed to save configuration');
       console.error('Failed to save config:', err);
     } finally {
@@ -75,9 +109,12 @@ export default function ConfigEditor() {
 
       if (!path) return;
 
+      // Save the config path for future saves
+      setConfigPath(path);
+
       // Load config from file via API
       if (apiClient) {
-        const configData = await apiClient.getConfig();
+        const configData = await apiClient.getConfig(path);
         const yamlStr = yaml.dump(configData, { indent: 2 });
         setConfig(yamlStr);
         setOriginalConfig(yamlStr);
@@ -92,14 +129,25 @@ export default function ConfigEditor() {
     try {
       const path = await window.electronAPI.saveFileDialog({
         filters: [{ name: 'YAML Files', extensions: ['yaml', 'yml'] }],
-        defaultPath: 'config.yaml',
+        defaultPath: configPath || 'config.yaml',
       });
 
       if (!path) return;
 
-      // In a real implementation, we'd save via the API
-      // For now, just show a success message
-      console.log('Would save to:', path);
+      // Save the config path for future saves
+      setConfigPath(path);
+
+      // Parse and save via API
+      const configObj = yaml.load(config);
+      if (typeof configObj !== 'object' || configObj === null) {
+        throw new Error('Invalid configuration format');
+      }
+
+      if (apiClient) {
+        await apiClient.updateConfig(configObj as any, path);
+        setOriginalConfig(config);
+        setIsDirty(false);
+      }
     } catch (err: any) {
       setError(err.message || 'Failed to save config file');
     }

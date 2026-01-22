@@ -7,7 +7,7 @@ import * as path from 'path';
 import { Program } from './types';
 import { DatabaseConfig } from './config';
 import { v4 as uuidv4 } from 'uuid';
-import { calculateEditDistance, safeNumericAverage, getFitnessScore } from './utils';
+import { calculateEditDistance, getFitnessScore } from './utils';
 
 /**
  * Program database with MAP-Elites and island-based evolution
@@ -24,7 +24,6 @@ export class ProgramDatabase {
   private islandGenerations: number[];
   private lastMigrationGeneration: number;
   private lastIteration: number;
-  private diversityCache: Map<number, { value: number; timestamp: number }>;
   private diversityReferenceSet: string[];
   private featureStats: Map<string, { min: number; max: number; values: number[] }>;
   private featureBinsPerDim: Record<string, number>;
@@ -45,7 +44,6 @@ export class ProgramDatabase {
     this.islandGenerations = Array(config.numIslands).fill(0);
     this.lastMigrationGeneration = 0;
     this.lastIteration = 0;
-    this.diversityCache = new Map();
     this.diversityReferenceSet = [];
     this.featureStats = new Map();
 
@@ -150,31 +148,73 @@ export class ProgramDatabase {
    */
   sampleFromIsland(
     islandId: number,
-    numInspirations: number = 5
+    numInspirations: number = 5,
+    strategy?: 'explore' | 'exploit' | 'weighted'
   ): [Program, Program[]] {
     islandId = islandId % this.islands.length;
-    const islandPrograms = Array.from(this.islands[islandId]);
+    let islandPrograms = Array.from(this.islands[islandId]);
 
+    // If island is empty, try to populate it from other islands or archive
     if (islandPrograms.length === 0) {
-      throw new Error(`Island ${islandId} is empty`);
+      console.warn(`Island ${islandId} is empty, attempting to repopulate...`);
+      
+      // Try to get best programs from other islands
+      const allPrograms = Array.from(this.programs.values());
+      if (allPrograms.length === 0) {
+        throw new Error(`No programs available in database`);
+      }
+      
+      // Sort by fitness and add top programs to this island
+      const topPrograms = allPrograms
+        .sort((a, b) => 
+          getFitnessScore(b.metrics, this.config.featureDimensions) -
+          getFitnessScore(a.metrics, this.config.featureDimensions)
+        )
+        .slice(0, Math.min(5, allPrograms.length));
+      
+      for (const program of topPrograms) {
+        const clonedProgram = {
+          ...program,
+          id: uuidv4(),
+          parentId: program.id,
+          metadata: { ...program.metadata, island: islandId, repopulated: true },
+        };
+        this.add(clonedProgram, undefined, islandId);
+      }
+      
+      islandPrograms = Array.from(this.islands[islandId]);
+      console.log(`Repopulated island ${islandId} with ${islandPrograms.length} programs`);
+      
+      if (islandPrograms.length === 0) {
+        throw new Error(`Failed to repopulate island ${islandId}`);
+      }
     }
 
-    // Sample parent based on exploration/exploitation ratio
-    const randVal = Math.random();
+    // Sample parent based on strategy
     let parent: Program;
-
-    if (randVal < this.config.explorationRatio) {
-      // Exploration: random sampling
+    if (strategy === 'explore') {
       parent = this.sampleFromIslandRandom(islandId);
-    } else if (
-      randVal <
-      this.config.explorationRatio + this.config.exploitationRatio
-    ) {
-      // Exploitation: sample from archive
+    } else if (strategy === 'exploit') {
       parent = this.sampleFromArchiveForIsland(islandId);
-    } else {
-      // Weighted sampling
+    } else if (strategy === 'weighted') {
       parent = this.sampleFromIslandWeighted(islandId);
+    } else {
+      // Sample parent based on exploration/exploitation ratio
+      const randVal = Math.random();
+
+      if (randVal < this.config.explorationRatio) {
+        // Exploration: random sampling
+        parent = this.sampleFromIslandRandom(islandId);
+      } else if (
+        randVal <
+        this.config.explorationRatio + this.config.exploitationRatio
+      ) {
+        // Exploitation: sample from archive
+        parent = this.sampleFromArchiveForIsland(islandId);
+      } else {
+        // Weighted sampling
+        parent = this.sampleFromIslandWeighted(islandId);
+      }
     }
 
     // Sample inspirations
@@ -217,6 +257,34 @@ export class ProgramDatabase {
         getFitnessScore(a.metrics, this.config.featureDimensions)
     );
     return sorted[0] || null;
+  }
+
+  /**
+   * Get best program for a specific island
+   */
+  getBestProgramForIsland(islandId: number, metric?: string): Program | null {
+    islandId = islandId % this.islands.length;
+    const islandPrograms = Array.from(this.islands[islandId])
+      .map((id) => this.programs.get(id)!)
+      .filter(Boolean);
+
+    if (islandPrograms.length === 0) return null;
+
+    if (metric) {
+      return (
+        islandPrograms
+          .filter((p) => metric in p.metrics)
+          .sort((a, b) => b.metrics[metric] - a.metrics[metric])[0] || null
+      );
+    }
+
+    return (
+      islandPrograms.sort(
+        (a, b) =>
+          getFitnessScore(b.metrics, this.config.featureDimensions) -
+          getFitnessScore(a.metrics, this.config.featureDimensions)
+      )[0] || null
+    );
   }
 
   /**
@@ -584,5 +652,19 @@ export class ProgramDatabase {
       const best = this.islandBestPrograms[i];
       console.log(`  Island ${i}: ${size} programs, gen ${gen}, best: ${best}`);
     }
+  }
+
+  /**
+   * Get all programs in the database
+   */
+  getAllPrograms(): Program[] {
+    return Array.from(this.programs.values());
+  }
+
+  /**
+   * Get archive program IDs
+   */
+  getArchive(): string[] {
+    return Array.from(this.archive);
   }
 }

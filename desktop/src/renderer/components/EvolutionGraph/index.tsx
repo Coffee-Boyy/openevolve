@@ -1,8 +1,30 @@
-import { useEffect, useRef, useState } from 'react';
-import * as d3 from 'd3';
+import { useEffect, useState, useMemo, useCallback } from 'react';
+import {
+  ReactFlow,
+  Node,
+  Edge,
+  useNodesState,
+  useEdgesState,
+  Controls,
+  Background,
+  NodeProps,
+  BackgroundVariant,
+  Panel,
+  Handle,
+  Position,
+} from '@xyflow/react';
+import '@xyflow/react/dist/style.css';
+import dagre from '@dagrejs/dagre';
 import { useAppStore } from '../../store/appStore';
+import clsx from 'clsx';
 
-interface Node {
+// Color scale matching D3's schemeCategory10
+const ISLAND_COLORS = [
+  '#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd',
+  '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf'
+];
+
+interface EvolutionNodeData extends Record<string, unknown> {
   id: string;
   code: string;
   metrics: Record<string, number>;
@@ -11,25 +33,185 @@ interface Node {
   island: number;
 }
 
-interface Edge {
-  source: string;
-  target: string;
-}
-
 interface EvolutionGraphProps {
   data?: {
-    nodes: Node[];
-    edges: Edge[];
+    nodes: EvolutionNodeData[];
+    edges: { source: string; target: string }[];
   };
   onNodeSelect?: (nodeId: string | null) => void;
   selectedNodeId?: string | null;
 }
 
-export default function EvolutionGraph({ data, onNodeSelect, selectedNodeId }: EvolutionGraphProps) {
-  const svgRef = useRef<SVGSVGElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [hoveredNode, setHoveredNode] = useState<Node | null>(null);
+// Custom node component for evolution programs
+function EvolutionNode({ data, selected }: NodeProps<Node<EvolutionNodeData>>) {
   const { theme } = useAppStore();
+  const [isHovered, setIsHovered] = useState(false);
+  
+  const nodeData = data as EvolutionNodeData;
+  
+  const radius = useMemo(() => {
+    const score = nodeData.metrics?.combined_score;
+    if (score !== undefined) {
+      return 10 + (score * 20);
+    }
+    return 15;
+  }, [nodeData.metrics?.combined_score]);
+
+  const islandColor = ISLAND_COLORS[nodeData.island % ISLAND_COLORS.length];
+
+  return (
+    <div
+      className={clsx(
+        'rounded-full cursor-pointer transition-all relative',
+        selected && 'ring-2 ring-red-500',
+        isHovered && !selected && 'ring-2 ring-yellow-500'
+      )}
+      style={{
+        width: radius * 2,
+        height: radius * 2,
+        backgroundColor: islandColor,
+        border: `1.5px solid ${selected ? '#ef4444' : (theme === 'dark' ? '#fff' : '#000')}`,
+        borderWidth: selected ? 3 : 1.5,
+      }}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+    >
+      <Handle 
+        type="target" 
+        position={Position.Top} 
+        style={{ opacity: 0 }}
+      />
+      <Handle 
+        type="source" 
+        position={Position.Bottom} 
+        style={{ opacity: 0 }}
+      />
+    </div>
+  );
+}
+
+const nodeTypes = {
+  evolution: EvolutionNode,
+};
+
+// Dagre layout function
+function getLayoutedElements(
+  nodes: Node<EvolutionNodeData>[],
+  edges: Edge[],
+  direction: 'TB' | 'LR' | 'BT' | 'RL' = 'TB'
+) {
+  const g = new dagre.graphlib.Graph().setDefaultEdgeLabel(() => ({}));
+  g.setGraph({ 
+    rankdir: direction, 
+    nodesep: 50, 
+    ranksep: 100,
+    marginx: 50,
+    marginy: 50,
+  });
+
+  nodes.forEach(node => {
+    const radius = node.data.metrics?.combined_score !== undefined
+      ? 10 + (node.data.metrics.combined_score * 20)
+      : 15;
+    g.setNode(node.id, { 
+      width: radius * 2 + 20, 
+      height: radius * 2 + 20 
+    });
+  });
+
+  edges.forEach(edge => {
+    g.setEdge(edge.source, edge.target);
+  });
+
+  dagre.layout(g);
+
+  return {
+    nodes: nodes.map(node => {
+      const pos = g.node(node.id);
+      return {
+        ...node,
+        position: { 
+          x: pos.x - (pos.width || 0) / 2, 
+          y: pos.y - (pos.height || 0) / 2 
+        },
+        targetPosition: direction === 'LR' ? Position.Left : Position.Top,
+        sourcePosition: direction === 'LR' ? Position.Right : Position.Bottom,
+      };
+    }),
+    edges: edges.map(edge => ({
+      ...edge,
+      style: { strokeWidth: 2 },
+    })),
+  };
+}
+
+export default function EvolutionGraph({ data, onNodeSelect, selectedNodeId }: EvolutionGraphProps) {
+  const { theme } = useAppStore();
+  const [nodes, setNodes, onNodesChange] = useNodesState([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+  const [hoveredNode, setHoveredNode] = useState<EvolutionNodeData | null>(null);
+
+  // Convert and layout when data changes
+  useEffect(() => {
+    if (!data || data.nodes.length === 0) {
+      setNodes([]);
+      setEdges([]);
+      return;
+    }
+
+    const rfNodes: Node<EvolutionNodeData>[] = data.nodes.map(n => ({
+      id: n.id,
+      type: 'evolution',
+      data: n,
+      position: { x: 0, y: 0 },
+      selected: selectedNodeId === n.id,
+    }));
+
+    const rfEdges: Edge[] = data.edges.map(e => ({
+      id: `${e.source}-${e.target}`,
+      source: e.source,
+      target: e.target,
+    }));
+
+    const { nodes: layouted, edges: layoutedEdges } = getLayoutedElements(rfNodes, rfEdges);
+    setNodes(layouted);
+    setEdges(layoutedEdges);
+  }, [data, setNodes, setEdges, selectedNodeId]);
+
+  const onNodeClick = useCallback(
+    (_: React.MouseEvent, node: Node) => {
+      onNodeSelect?.(node.id);
+    },
+    [onNodeSelect]
+  );
+
+  const onPaneClick = useCallback(() => {
+    onNodeSelect?.(null);
+  }, [onNodeSelect]);
+
+  const onNodeMouseEnter = useCallback(
+    (_: React.MouseEvent, node: Node) => {
+      setHoveredNode(node.data as EvolutionNodeData);
+    },
+    []
+  );
+
+  const onNodeMouseLeave = useCallback(() => {
+    setHoveredNode(null);
+  }, []);
+
+  // Edge styling based on theme
+  const styledEdges = useMemo(() => {
+    const edgeColor = theme === 'dark' ? '#444' : '#999';
+    return edges.map((edge) => ({
+      ...edge,
+      style: {
+        ...edge.style,
+        stroke: edgeColor,
+        strokeOpacity: 0.6,
+      },
+    }));
+  }, [edges, theme]);
 
   // Show message when no data is available
   if (!data || data.nodes.length === 0) {
@@ -51,192 +233,72 @@ export default function EvolutionGraph({ data, onNodeSelect, selectedNodeId }: E
           </svg>
           <p className="text-lg font-medium">No Evolution Data Yet</p>
           <p className="text-sm mt-2">The visualization will appear as evolution progresses</p>
-          <p className="text-xs mt-1 text-muted-foreground/70">Data is saved every 10 iterations</p>
-        </div>
-      </div>
-    );
-  }
-
-  useEffect(() => {
-    if (!svgRef.current || !containerRef.current) return;
-
-    const svg = d3.select(svgRef.current);
-    svg.selectAll('*').remove();
-
-    const container = containerRef.current;
-    const width = container.clientWidth;
-    const height = container.clientHeight;
-
-    svg.attr('width', width).attr('height', height);
-
-    // Create zoom behavior
-    const g = svg.append('g');
-    const zoom = d3.zoom<SVGSVGElement, unknown>()
-      .scaleExtent([0.1, 4])
-      .on('zoom', (event) => {
-        g.attr('transform', event.transform);
-      });
-
-    svg.call(zoom);
-
-    // Click on background to deselect
-    svg.on('click', (event) => {
-      if (event.target === svg.node()) {
-        onNodeSelect?.(null);
-      }
-    });
-
-    // Create color scale for islands
-    const colorScale = d3.scaleOrdinal(d3.schemeCategory10);
-
-    // Create links data
-    const linksData = data.edges.map(e => ({
-      source: e.source,
-      target: e.target,
-    }));
-
-    // Create simulation
-    const simulation = d3.forceSimulation(data.nodes as any)
-      .force('link', d3.forceLink(linksData as any)
-        .id((d: any) => d.id)
-        .distance(100))
-      .force('charge', d3.forceManyBody().strength(-300))
-      .force('center', d3.forceCenter(width / 2, height / 2))
-      .force('collision', d3.forceCollide().radius(40));
-
-    // Draw links
-    const link = g.append('g')
-      .selectAll('line')
-      .data(linksData)
-      .join('line')
-      .attr('stroke', theme === 'dark' ? '#444' : '#999')
-      .attr('stroke-opacity', 0.6)
-      .attr('stroke-width', 2);
-
-    // Draw nodes
-    const node = g.append('g')
-      .selectAll('circle')
-      .data(data.nodes)
-      .join('circle')
-      .attr('r', (d) => {
-        // Size by score if available
-        const score = d.metrics?.combined_score;
-        if (score !== undefined) {
-          return 10 + (score * 20);
-        }
-        return 15;
-      })
-      .attr('fill', (d) => colorScale(d.island.toString()))
-      .attr('stroke', (d) => selectedNodeId === d.id ? '#ef4444' : (theme === 'dark' ? '#fff' : '#000'))
-      .attr('stroke-width', (d) => selectedNodeId === d.id ? 3 : 1.5)
-      .attr('cursor', 'pointer')
-      .on('click', (event, d) => {
-        event.stopPropagation();
-        onNodeSelect?.(d.id);
-      })
-      .on('mouseover', (event, d) => {
-        setHoveredNode(d);
-        d3.select(event.currentTarget)
-          .attr('stroke', '#fbbf24')
-          .attr('stroke-width', 3);
-      })
-      .on('mouseout', (event, d) => {
-        setHoveredNode(null);
-        d3.select(event.currentTarget)
-          .attr('stroke', selectedNodeId === d.id ? '#ef4444' : (theme === 'dark' ? '#fff' : '#000'))
-          .attr('stroke-width', selectedNodeId === d.id ? 3 : 1.5);
-      })
-      .call(d3.drag<any, Node>()
-        .on('start', (event, d: any) => {
-          if (!event.active) simulation.alphaTarget(0.3).restart();
-          d.fx = d.x;
-          d.fy = d.y;
-        })
-        .on('drag', (event, d: any) => {
-          d.fx = event.x;
-          d.fy = event.y;
-        })
-        .on('end', (event, d: any) => {
-          if (!event.active) simulation.alphaTarget(0);
-          d.fx = null;
-          d.fy = null;
-        })
-      );
-
-    // Add tooltips
-    node.append('title')
-      .text((d) => `ID: ${d.id}\nGeneration: ${d.generation}\nIsland: ${d.island}`);
-
-    // Update positions on simulation tick
-    simulation.on('tick', () => {
-      link
-        .attr('x1', (d: any) => d.source.x)
-        .attr('y1', (d: any) => d.source.y)
-        .attr('x2', (d: any) => d.target.x)
-        .attr('y2', (d: any) => d.target.y);
-
-      node
-        .attr('cx', (d: any) => d.x)
-        .attr('cy', (d: any) => d.y);
-    });
-
-    // Cleanup
-    return () => {
-      simulation.stop();
-    };
-  }, [data, theme, selectedNodeId]);
-
-  if (!data || data.nodes.length === 0) {
-    return (
-      <div className="h-full flex items-center justify-center text-muted-foreground">
-        <div className="text-center">
-          <p className="text-lg mb-2">No evolution data available</p>
-          <p className="text-sm">Start an evolution run to see the graph</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="relative h-full w-full" ref={containerRef}>
-      <svg ref={svgRef} className="w-full h-full" />
-      
-      {/* Hover tooltip */}
-      {hoveredNode && (
-        <div className="absolute top-4 left-4 bg-background border border-border rounded-lg p-3 shadow-lg pointer-events-none">
-          <div className="space-y-1 text-sm">
-            <div className="flex gap-2">
-              <span className="text-muted-foreground">ID:</span>
-              <span className="font-mono text-xs">{hoveredNode.id.slice(0, 8)}</span>
-            </div>
-            <div className="flex gap-2">
-              <span className="text-muted-foreground">Gen:</span>
-              <span>{hoveredNode.generation}</span>
-            </div>
-            <div className="flex gap-2">
-              <span className="text-muted-foreground">Island:</span>
-              <span>{hoveredNode.island}</span>
-            </div>
-            {hoveredNode.metrics?.combined_score !== undefined && (
+    <div className="relative h-full w-full">
+      <ReactFlow
+        nodes={nodes}
+        edges={styledEdges}
+        nodeTypes={nodeTypes}
+        onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
+        onNodeClick={onNodeClick}
+        onPaneClick={onPaneClick}
+        onNodeMouseEnter={onNodeMouseEnter}
+        onNodeMouseLeave={onNodeMouseLeave}
+        fitView
+        fitViewOptions={{ padding: 0.2 }}
+        minZoom={0.1}
+        maxZoom={4}
+        defaultEdgeOptions={{
+          type: 'smoothstep',
+        }}
+        className={theme === 'dark' ? 'dark' : ''}
+      >
+        <Controls />
+        <Background variant={BackgroundVariant.Dots} gap={12} size={1} />
+        
+        {/* Hover tooltip */}
+        {hoveredNode && (
+          <Panel position="top-left" className="bg-background border border-border rounded-lg p-3 shadow-lg pointer-events-none">
+            <div className="space-y-1 text-sm">
               <div className="flex gap-2">
-                <span className="text-muted-foreground">Score:</span>
-                <span>{hoveredNode.metrics.combined_score.toFixed(4)}</span>
+                <span className="text-muted-foreground">ID:</span>
+                <span className="font-mono text-xs">{hoveredNode.id.slice(0, 8)}</span>
               </div>
-            )}
-          </div>
-        </div>
-      )}
+              <div className="flex gap-2">
+                <span className="text-muted-foreground">Gen:</span>
+                <span>{hoveredNode.generation}</span>
+              </div>
+              <div className="flex gap-2">
+                <span className="text-muted-foreground">Island:</span>
+                <span>{hoveredNode.island}</span>
+              </div>
+              {hoveredNode.metrics?.combined_score !== undefined && (
+                <div className="flex gap-2">
+                  <span className="text-muted-foreground">Score:</span>
+                  <span>{hoveredNode.metrics.combined_score.toFixed(4)}</span>
+                </div>
+              )}
+            </div>
+          </Panel>
+        )}
 
-      {/* Legend */}
-      <div className="absolute top-4 right-4 bg-background/90 border border-border rounded-lg p-3 text-xs">
-        <div className="font-semibold mb-2">Controls</div>
-        <div className="space-y-1 text-muted-foreground">
-          <div>• Click node: View code</div>
-          <div>• Drag node: Reposition</div>
-          <div>• Scroll: Zoom in/out</div>
-          <div>• Drag canvas: Pan</div>
-        </div>
-      </div>
+        {/* Legend */}
+        <Panel position="top-right" className="bg-background/90 border border-border rounded-lg p-3 text-xs">
+          <div className="font-semibold mb-2">Controls</div>
+          <div className="space-y-1 text-muted-foreground">
+            <div>• Click node: View code</div>
+            <div>• Drag node: Reposition</div>
+            <div>• Scroll: Zoom in/out</div>
+            <div>• Drag canvas: Pan</div>
+          </div>
+        </Panel>
+      </ReactFlow>
     </div>
   );
 }

@@ -8,6 +8,8 @@ files:
   - dist
   - dist-electron
   - package.json
+  - from: dist-electron/main/prompts
+    to: dist-electron/main/prompts
 mac:
   category: public.app-category.developer-tools
   target:

@@ -16,7 +16,7 @@ export default function Dashboard() {
       <div className="flex-1 flex overflow-hidden">
         <StatusPanel />
         <div className="flex-1 flex flex-col overflow-hidden">
-          <Tabs.Root value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
+          <Tabs.Root value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0">
             <Tabs.List className="flex border-b border-border px-4">
               <Tabs.Trigger
                 value="setup"
@@ -52,7 +52,7 @@ export default function Dashboard() {
             <Tabs.Content value="config" className="flex-1 overflow-hidden">
               <ConfigView />
             </Tabs.Content>
-            <Tabs.Content value="logs" className="flex-1 overflow-hidden">
+            <Tabs.Content value="logs" className="flex-1 min-h-0 overflow-hidden">
               <LogsView />
             </Tabs.Content>
           </Tabs.Root>

@@ -13,19 +13,18 @@ import { PACEvolveConfig } from '../config';
  */
 export class MomentumTracker {
   private config: PACEvolveConfig;
-  private recentImprovements: number[];
-  private momentum: number;
-  private backtrackHistory: Array<{ iteration: number; program: Program }>;
-  private iterationsSinceImprovement: number;
-  private currentBestScore: number;
+  private states: Map<number, {
+    recentRelativeImprovements: number[];
+    momentum: number;
+    backtrackHistory: Array<{ iteration: number; program: Program }>;
+    iterationsSinceImprovement: number;
+    currentBestScore: number;
+    initialScore: number | null;
+  }>;
 
   constructor(config: PACEvolveConfig) {
     this.config = config;
-    this.recentImprovements = [];
-    this.momentum = 0;
-    this.backtrackHistory = [];
-    this.iterationsSinceImprovement = 0;
-    this.currentBestScore = -Infinity;
+    this.states = new Map();
 
     console.log('Initialized Momentum-Based Backtracking (MBB)');
   }
@@ -33,90 +32,97 @@ export class MomentumTracker {
   /**
    * Update momentum with new program score
    */
-  update(program: Program, iteration: number): void {
+  update(program: Program, iteration: number, islandId: number, targetScore?: number): void {
     if (!this.config.enableMBB) return;
 
+    const state = this.getState(islandId);
     const score = program.metrics.combined_score || 0;
 
-    // Calculate improvement
-    let improvement = 0;
-    if (this.currentBestScore !== -Infinity) {
-      improvement = score - this.currentBestScore;
+    if (state.initialScore === null) {
+      state.initialScore = score;
     }
 
     // Update best score if improved
-    if (score > this.currentBestScore) {
-      this.currentBestScore = score;
-      this.iterationsSinceImprovement = 0;
+    let relativeImprovement = 0;
+    if (score > state.currentBestScore) {
+      const previousBest =
+        state.currentBestScore === -Infinity ? state.initialScore || score : state.currentBestScore;
+      const gapDenominator = this.relativeGap(previousBest, targetScore);
+      relativeImprovement = (score - previousBest) / gapDenominator;
+
+      state.currentBestScore = score;
+      state.iterationsSinceImprovement = 0;
 
       // Store as potential backtrack point
-      this.backtrackHistory.push({
+      state.backtrackHistory.push({
         iteration,
         program: { ...program },
       });
 
       // Limit history size
-      if (this.backtrackHistory.length > this.config.backtrackDepth) {
-        this.backtrackHistory.shift();
+      if (state.backtrackHistory.length > this.config.backtrackDepth) {
+        state.backtrackHistory.shift();
       }
     } else {
-      this.iterationsSinceImprovement++;
+      state.iterationsSinceImprovement++;
     }
 
     // Add improvement to recent window
-    this.recentImprovements.push(improvement);
+    state.recentRelativeImprovements.push(relativeImprovement);
 
     // Keep window size limited
     const windowSize = this.config.momentumWindowSize;
-    if (this.recentImprovements.length > windowSize) {
-      this.recentImprovements.shift();
+    if (state.recentRelativeImprovements.length > windowSize) {
+      state.recentRelativeImprovements.shift();
     }
 
-    // Calculate momentum as average improvement rate
-    this.momentum =
-      this.recentImprovements.reduce((sum, imp) => sum + imp, 0) /
-      Math.max(this.recentImprovements.length, 1);
+    // Calculate momentum as EWMA of relative improvements
+    const beta = this.config.momentumBeta;
+    const latest = state.recentRelativeImprovements.at(-1) || 0;
+    state.momentum = beta * state.momentum + (1 - beta) * latest;
   }
 
   /**
    * Check if should backtrack
    */
-  shouldBacktrack(): boolean {
+  shouldBacktrack(islandId: number): boolean {
     if (!this.config.enableMBB) return false;
-    if (this.backtrackHistory.length === 0) return false;
+    const state = this.getState(islandId);
+    if (state.backtrackHistory.length === 0) return false;
 
     // Backtrack if:
     // 1. Momentum is very low (stagnation detected)
     // 2. No improvement for many iterations
-    const momentumStagnation = Math.abs(this.momentum) < this.config.stagnationThreshold;
-    const longStagnation = this.iterationsSinceImprovement > this.config.momentumWindowSize * 2;
+    const momentumStagnation =
+      Math.abs(state.momentum) < this.config.stagnationThreshold;
+    const longStagnation =
+      state.iterationsSinceImprovement > this.config.momentumWindowSize * 2;
 
-    return (momentumStagnation && longStagnation) || this.iterationsSinceImprovement > 50;
+    return (momentumStagnation && longStagnation) || state.iterationsSinceImprovement > 50;
   }
 
   /**
    * Get a program to backtrack to
    */
-  getBacktrackTarget(): Program | null {
+  getBacktrackTarget(islandId: number): Program | null {
     if (!this.config.enableMBB) return null;
-    if (this.backtrackHistory.length === 0) return null;
+    const state = this.getState(islandId);
+    if (state.backtrackHistory.length === 0) return null;
 
-    // Choose a recent high-performing state (not the most recent, to explore alternative paths)
-    const targetIndex = Math.min(
-      this.backtrackHistory.length - 2,
-      Math.floor(this.backtrackHistory.length * 0.7)
+    const history = state.backtrackHistory;
+    const targetIndex = this.samplePowerLawIndex(
+      Math.max(1, history.length - 1)
     );
-
-    const target = this.backtrackHistory[Math.max(0, targetIndex)];
+    const target = history[Math.min(targetIndex, history.length - 1)];
 
     console.log(
       `Backtracking to iteration ${target.iteration} (score: ${target.program.metrics.combined_score})`
     );
 
     // Reset momentum after backtrack
-    this.recentImprovements = [];
-    this.momentum = 0;
-    this.iterationsSinceImprovement = 0;
+    state.recentRelativeImprovements = [];
+    state.momentum = 0;
+    state.iterationsSinceImprovement = 0;
 
     return target.program;
   }
@@ -124,21 +130,71 @@ export class MomentumTracker {
   /**
    * Get current progress metrics
    */
-  getProgressMetrics(): ProgressMetrics {
+  getProgressMetrics(islandId: number): ProgressMetrics {
+    const state = this.getState(islandId);
     return {
-      recentImprovements: [...this.recentImprovements],
-      momentum: this.momentum,
-      iterationsSinceImprovement: this.iterationsSinceImprovement,
-      currentBestScore: this.currentBestScore,
+      recentImprovements: [...state.recentRelativeImprovements],
+      momentum: state.momentum,
+      iterationsSinceImprovement: state.iterationsSinceImprovement,
+      currentBestScore: state.currentBestScore,
     };
   }
 
   /**
    * Reset tracker
    */
-  reset(): void {
-    this.recentImprovements = [];
-    this.momentum = 0;
-    this.iterationsSinceImprovement = 0;
+  reset(islandId?: number): void {
+    if (islandId === undefined) {
+      this.states.clear();
+      return;
+    }
+
+    const state = this.getState(islandId);
+    state.recentRelativeImprovements = [];
+    state.momentum = 0;
+    state.iterationsSinceImprovement = 0;
+    state.currentBestScore = -Infinity;
+    state.initialScore = null;
+    state.backtrackHistory = [];
+  }
+
+  private getState(islandId: number) {
+    if (!this.states.has(islandId)) {
+      this.states.set(islandId, {
+        recentRelativeImprovements: [],
+        momentum: 0,
+        backtrackHistory: [],
+        iterationsSinceImprovement: 0,
+        currentBestScore: -Infinity,
+        initialScore: null,
+      });
+    }
+
+    return this.states.get(islandId)!;
+  }
+
+  private relativeGap(previousBest: number, targetScore?: number): number {
+    if (targetScore !== undefined) {
+      return Math.max(Math.abs(targetScore - previousBest), 1e-6);
+    }
+    return Math.max(Math.abs(previousBest), 1e-6);
+  }
+
+  private samplePowerLawIndex(count: number): number {
+    const power = this.config.backtrackPower;
+    const weights = Array(count)
+      .fill(null)
+      .map((_, idx) => 1 / Math.pow(idx + 1, power));
+    const total = weights.reduce((sum, w) => sum + w, 0);
+    let rand = Math.random() * total;
+
+    for (let i = 0; i < weights.length; i++) {
+      rand -= weights[i];
+      if (rand <= 0) {
+        return i;
+      }
+    }
+
+    return count - 1;
   }
 }

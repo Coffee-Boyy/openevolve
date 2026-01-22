@@ -149,7 +149,7 @@ export default function LogViewer() {
       minute: '2-digit',
       second: '2-digit',
       fractionalSecondDigits: 3
-    });
+    } as Intl.DateTimeFormatOptions);
   };
 
   return (
@@ -206,7 +206,7 @@ export default function LogViewer() {
       <div
         ref={containerRef}
         onScroll={handleScroll}
-        className="flex-1 overflow-y-auto overflow-x-hidden p-4 font-mono text-xs"
+        className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-4 font-mono text-xs"
       >
         {filteredLogs.length === 0 ? (
           <div className="text-center text-muted-foreground py-8">
@@ -215,7 +215,7 @@ export default function LogViewer() {
           </div>
         ) : (
           filteredLogs.map((log, index) => (
-            <div key={index} className="py-0.5 hover:bg-accent/50 px-2 -mx-2 rounded">
+            <div key={`log-line-${index}`} className="py-0.5 hover:bg-accent/50 px-2 -mx-2 rounded">
               <span className="text-muted-foreground mr-2">
                 {formatTimestamp(log.timestamp)}
               </span>

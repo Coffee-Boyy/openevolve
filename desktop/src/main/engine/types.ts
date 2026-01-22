@@ -83,9 +83,9 @@ export interface ProgressData {
 }
 
 /**
- * Idea for PACEvolve context management
+ * Hypothesis entry for PACEvolve idea memory
  */
-export interface Idea {
+export interface IdeaHypothesis {
   id: string;
   content: string;
   programId: string;
@@ -93,6 +93,22 @@ export interface Idea {
   score: number;
   timestamp: number;
   stale: boolean;
+  summary?: string;
+}
+
+/**
+ * Concept-level idea cluster with hypotheses
+ */
+export interface IdeaCluster {
+  id: string;
+  title: string;
+  summary: string;
+  iteration: number;
+  score: number;
+  timestamp: number;
+  stale: boolean;
+  hypotheses: IdeaHypothesis[];
+  prunedSummaries?: string[];
 }
 
 /**

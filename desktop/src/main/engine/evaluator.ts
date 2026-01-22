@@ -4,7 +4,9 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import * as os from 'os';
 import { Worker } from 'worker_threads';
+import * as ts from 'typescript';
 import { EvaluationResult } from './types';
 import { EvaluatorConfig } from './config';
 import { LLMEnsemble } from './llm/ensemble';
@@ -35,26 +37,42 @@ export class Evaluator {
     this.llmEnsemble = llmEnsemble;
     this.promptSampler = promptSampler;
     this.pendingArtifacts = new Map();
+    this.evaluationModule = null;
 
-    this.loadEvaluationFunction();
     console.log(`Initialized evaluator with ${evaluationFile}`);
+  }
+
+  /**
+   * Initialize the evaluator (must be called after construction)
+   */
+  async initialize(): Promise<void> {
+    await this.loadEvaluationFunction();
   }
 
   /**
    * Load the evaluation function from the evaluation file
    */
-  private loadEvaluationFunction(): void {
+  private async loadEvaluationFunction(): Promise<void> {
     if (!fs.existsSync(this.evaluationFile)) {
       throw new Error(`Evaluation file ${this.evaluationFile} not found`);
     }
 
     try {
-      // Clear module cache to allow hot reloading
-      const resolvedPath = require.resolve(path.resolve(this.evaluationFile));
-      delete require.cache[resolvedPath];
-
+      let resolvedPath = path.resolve(this.evaluationFile);
+      
+      // If the file is TypeScript, compile it to JavaScript first
+      if (this.evaluationFile.endsWith('.ts')) {
+        resolvedPath = await this.compileTypeScriptFile(this.evaluationFile);
+      }
+      
+      // Convert to file:// URL for dynamic import
+      const fileUrl = `file://${resolvedPath}`;
+      
+      // Add cache busting for hot reloading
+      const moduleUrl = `${fileUrl}?t=${Date.now()}`;
+      
       // Load the module
-      this.evaluationModule = require(path.resolve(this.evaluationFile));
+      this.evaluationModule = await import(moduleUrl);
 
       if (!this.evaluationModule.evaluate) {
         throw new Error(
@@ -69,6 +87,44 @@ export class Evaluator {
     } catch (error) {
       console.error(`Error loading evaluation function:`, error);
       throw error;
+    }
+  }
+
+  /**
+   * Compile a TypeScript file to JavaScript
+   */
+  private async compileTypeScriptFile(tsFilePath: string): Promise<string> {
+    // Check if TypeScript is available
+    if (!ts || typeof ts.transpileModule !== 'function') {
+      throw new Error(
+        'TypeScript compiler is not available. Please ensure typescript is installed as a dependency.'
+      );
+    }
+
+    try {
+      const tsCode = fs.readFileSync(tsFilePath, 'utf8');
+      
+      // Compile TypeScript to JavaScript
+      const result = ts.transpileModule(tsCode, {
+        compilerOptions: {
+          module: ts.ModuleKind.ESNext,
+          target: ts.ScriptTarget.ES2020,
+          esModuleInterop: true,
+          allowSyntheticDefaultImports: true,
+          skipLibCheck: true,
+        },
+      });
+
+      // Write compiled JavaScript to a temporary file in the same directory
+      const jsFilePath = tsFilePath.replace(/\.ts$/, '.js');
+      fs.writeFileSync(jsFilePath, result.outputText);
+
+      console.log(`Compiled TypeScript file ${tsFilePath} to ${jsFilePath}`);
+      return jsFilePath;
+    } catch (error) {
+      throw new Error(
+        `Failed to compile TypeScript file ${tsFilePath}: ${error instanceof Error ? error.message : String(error)}`
+      );
     }
   }
 
@@ -101,6 +157,11 @@ export class Evaluator {
     programCode: string,
     programId: string = ''
   ): Promise<Record<string, number>> {
+    // Ensure evaluator is initialized
+    if (!this.evaluationModule) {
+      await this.initialize();
+    }
+
     const startTime = Date.now();
     const programIdStr = programId ? ` ${programId}` : '';
 
@@ -111,7 +172,7 @@ export class Evaluator {
 
     for (let attempt = 0; attempt < this.config.maxRetries + 1; attempt++) {
       // Create temporary file for program
-      const tmpDir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'openevolve-'));
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'openevolve-'));
       const tempFilePath = path.join(tmpDir, `program${this.programSuffix}`);
 
       try {

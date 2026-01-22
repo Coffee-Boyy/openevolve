@@ -1,5 +1,9 @@
 import LogViewer from '../LogViewer';
 
 export default function LogsView() {
-  return <LogViewer />;
+  return (
+    <div className="h-full">
+      <LogViewer />
+    </div>
+  );
 }

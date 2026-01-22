@@ -59,9 +59,9 @@ export class OpenAILLM implements LLMInterface {
           stop: options?.stop,
           seed: this.config.randomSeed,
           ...(this.config.reasoningEffort && {
-            reasoning_effort: this.config.reasoningEffort,
+            reasoning_effort: this.config.reasoningEffort as any,
           }),
-        });
+        } as any);
 
         const response = completion.choices[0]?.message?.content;
         if (!response) {

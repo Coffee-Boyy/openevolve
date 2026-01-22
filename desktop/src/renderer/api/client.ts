@@ -82,13 +82,56 @@ export class ApiClient {
     return window.electronAPI.getEvolutionStatus(runId);
   }
 
+  async getEvolutionData(runId?: string): Promise<EvolutionData> {
+    if (!runId) {
+      throw new Error('Run ID is required');
+    }
+    return window.electronAPI.getEvolutionData(runId);
+  }
+
+  async getProgramDetails(programId: string, runId?: string): Promise<{
+    id: string;
+    code: string;
+    metrics: Record<string, number>;
+    generation: number;
+    island: number;
+    parent_id?: string;
+    iteration: number;
+    method?: string;
+    artifacts_json?: any;
+  }> {
+    if (!runId) {
+      throw new Error('Run ID is required');
+    }
+    return window.electronAPI.getProgramDetails(runId, programId);
+  }
+
+  async getEvolutionLogs(runId: string): Promise<{
+    logs: Array<{
+      timestamp: number;
+      level: 'debug' | 'info' | 'warning' | 'error';
+      message: string;
+      source?: string;
+    }>;
+  }> {
+    return window.electronAPI.getEvolutionLogs(runId);
+  }
+
   // Configuration
   async getConfig(configPath?: string): Promise<EvolutionConfig> {
     return window.electronAPI.getConfig(configPath);
   }
 
   async updateConfig(config: Partial<EvolutionConfig>, configPath: string): Promise<void> {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/0967f0db-dd0f-4f07-b0e8-2fd7aeec4c88',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'client.ts:91',message:'updateConfig called',data:{hasConfig:!!config,configPath:configPath,configPathType:typeof configPath},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,B,C'})}).catch(()=>{});
+    // #endregion
+    
     await window.electronAPI.saveConfig(configPath, config);
+    
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/0967f0db-dd0f-4f07-b0e8-2fd7aeec4c88',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'client.ts:95',message:'saveConfig IPC call completed',data:{},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D'})}).catch(()=>{});
+    // #endregion
   }
 
   // Real-time updates via IPC events

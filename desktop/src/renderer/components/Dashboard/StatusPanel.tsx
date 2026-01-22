@@ -22,8 +22,8 @@ export default function StatusPanel() {
       // Save setup code to temporary files
       const tempDir = await window.electronAPI.getTempDir();
 
-      const initialPath = `${tempDir}/initial_program.py`;
-      const evaluatorPath = `${tempDir}/evaluator.py`;
+      const initialPath = `${tempDir}/initial_program.ts`;
+      const evaluatorPath = `${tempDir}/evaluator.ts`;
 
       await window.electronAPI.writeFile(initialPath, setupCode.initial);
       await window.electronAPI.writeFile(evaluatorPath, setupCode.evaluator);

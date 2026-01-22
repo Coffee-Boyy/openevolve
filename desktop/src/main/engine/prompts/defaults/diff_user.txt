@@ -5,6 +5,11 @@
 
 {artifacts}
 
+# Idea Memory
+{generation_context}
+
+{selection_context}
+
 # Program Evolution History
 {evolution_history}
 

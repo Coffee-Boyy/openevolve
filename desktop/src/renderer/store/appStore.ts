@@ -32,6 +32,10 @@ interface AppState {
   setupCode: SetupCode;
   setSetupCode: (type: 'initial' | 'evaluator', code: string) => void;
 
+  // Config path
+  configPath: string | null;
+  setConfigPath: (path: string | null) => void;
+
   // API client
   apiClient: ApiClient | null;
   setApiClient: (client: ApiClient) => void;
@@ -67,6 +71,16 @@ export const useAppStore = create<AppState>((set, get) => ({
     localStorage.setItem(`setupCode_${type}`, code);
   },
 
+  configPath: null,
+  setConfigPath: (configPath) => {
+    set({ configPath });
+    if (configPath) {
+      localStorage.setItem('configPath', configPath);
+    } else {
+      localStorage.removeItem('configPath');
+    }
+  },
+
   apiClient: null,
   setApiClient: (apiClient) => set({ apiClient }),
 
@@ -88,6 +102,12 @@ export const useAppStore = create<AppState>((set, get) => ({
           evaluator: savedEvaluator || '',
         },
       });
+    }
+
+    // Load saved config path from localStorage
+    const savedConfigPath = localStorage.getItem('configPath');
+    if (savedConfigPath) {
+      set({ configPath: savedConfigPath });
     }
 
     // Initialize IPC-based API client

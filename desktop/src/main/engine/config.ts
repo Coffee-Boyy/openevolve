@@ -186,12 +186,19 @@ export interface PACEvolveConfig {
   ideaMemorySize: number;
   pruningThreshold: number;
   pruningInterval: number;
+  maxIdeas: number;
+  maxHypothesesPerIdea: number;
+  ideaDistinctnessThreshold: number;
+  ideaSummaryMaxChars: number;
+  hypothesisSummaryMaxChars: number;
 
   // Momentum-Based Backtracking
   enableMBB: boolean;
   momentumWindowSize: number;
   stagnationThreshold: number;
   backtrackDepth: number;
+  momentumBeta: number;
+  backtrackPower: number;
 
   // Self-Adaptive Collaborative Evolution
   enableCE: boolean;
@@ -328,10 +335,17 @@ export const DEFAULT_CONFIG: Config = {
     ideaMemorySize: 50,
     pruningThreshold: 0.3,
     pruningInterval: 10,
+    maxIdeas: 20,
+    maxHypothesesPerIdea: 10,
+    ideaDistinctnessThreshold: 0.75,
+    ideaSummaryMaxChars: 280,
+    hypothesisSummaryMaxChars: 180,
     enableMBB: true,
     momentumWindowSize: 10,
     stagnationThreshold: 0.001,
     backtrackDepth: 5,
+    momentumBeta: 0.9,
+    backtrackPower: 1.5,
     enableCE: true,
     initialExploreProb: 0.3,
     initialExploitProb: 0.5,

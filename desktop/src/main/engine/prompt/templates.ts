@@ -20,10 +20,12 @@ export class TemplateManager {
     this.customTemplateDir = customTemplateDir;
 
     // Default template directory relative to this file
-    this.defaultTemplateDir = path.join(__dirname, '..', 'prompts', 'defaults');
+    this.defaultTemplateDir = path.join(__dirname, 'prompts', 'defaults');
 
     this.loadTemplates();
     console.log('Initialized template manager');
+    console.log('Template directory:', this.defaultTemplateDir);
+    console.log('Templates loaded:', Array.from(this.templates.keys()));
   }
 
   /**
@@ -32,12 +34,17 @@ export class TemplateManager {
   private loadTemplates(): void {
     // Try custom directory first
     if (this.customTemplateDir && fs.existsSync(this.customTemplateDir)) {
+      console.log('Loading custom templates from:', this.customTemplateDir);
       this.loadTemplatesFromDir(this.customTemplateDir);
     }
 
     // Load from default directory
     if (fs.existsSync(this.defaultTemplateDir)) {
+      console.log('Loading default templates from:', this.defaultTemplateDir);
       this.loadTemplatesFromDir(this.defaultTemplateDir);
+    } else {
+      console.error('Default template directory not found:', this.defaultTemplateDir);
+      console.error('This may cause template loading to fail');
     }
 
     // Load fragments
@@ -48,16 +55,26 @@ export class TemplateManager {
    * Load templates from a directory
    */
   private loadTemplatesFromDir(dir: string): void {
-    if (!fs.existsSync(dir)) return;
+    if (!fs.existsSync(dir)) {
+      console.warn('Template directory does not exist:', dir);
+      return;
+    }
 
-    const files = fs.readdirSync(dir);
-    for (const file of files) {
-      if (file.endsWith('.txt')) {
-        const name = path.basename(file, '.txt');
-        const filePath = path.join(dir, file);
-        const content = fs.readFileSync(filePath, 'utf8');
-        this.templates.set(name, content);
+    try {
+      const files = fs.readdirSync(dir);
+      console.log(`Found ${files.length} files in ${dir}`);
+      
+      for (const file of files) {
+        if (file.endsWith('.txt')) {
+          const name = path.basename(file, '.txt');
+          const filePath = path.join(dir, file);
+          const content = fs.readFileSync(filePath, 'utf8');
+          this.templates.set(name, content);
+          console.log(`✓ Loaded template: ${name}`);
+        }
       }
+    } catch (error) {
+      console.error('Error loading templates from directory:', dir, error);
     }
   }
 
@@ -73,9 +90,12 @@ export class TemplateManager {
         for (const [key, value] of Object.entries(fragments)) {
           this.fragments.set(key, value as string);
         }
+        console.log(`✓ Loaded ${this.fragments.size} fragments`);
       } catch (error) {
-        console.warn('Error loading fragments:', error);
+        console.error('Error loading fragments from:', fragmentsPath, error);
       }
+    } else {
+      console.warn('Fragments file not found at:', fragmentsPath);
     }
   }
 

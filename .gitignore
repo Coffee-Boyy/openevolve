@@ -58,3 +58,4 @@ problems
 node_modules/
 dist-electron/
 python-venv/
+release/

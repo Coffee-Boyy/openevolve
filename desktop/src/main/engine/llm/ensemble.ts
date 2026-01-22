@@ -91,29 +91,4 @@ export class LLMEnsemble {
     );
     return Promise.all(promises);
   }
-
-  /**
-   * Generate multiple responses in parallel
-   */
-  async generateMultiple(
-    prompt: string,
-    n: number,
-    options?: GenerateOptions
-  ): Promise<string[]> {
-    const promises = Array(n)
-      .fill(null)
-      .map(() => this.generate(prompt, options));
-    return Promise.all(promises);
-  }
-
-  /**
-   * Generate responses for multiple prompts in parallel
-   */
-  async parallelGenerate(
-    prompts: string[],
-    options?: GenerateOptions
-  ): Promise<string[]> {
-    const promises = prompts.map((prompt) => this.generate(prompt, options));
-    return Promise.all(promises);
-  }
 }

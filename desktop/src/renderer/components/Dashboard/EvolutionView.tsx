@@ -8,7 +8,7 @@ export default function EvolutionView() {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [selectedProgramId, setSelectedProgramId] = useState<string | null>(null);
-  const [graphWidth, setGraphWidth] = useState(60); // percentage
+  const [graphHeight, setGraphHeight] = useState(60); // percentage
   const [isDragging, setIsDragging] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -69,10 +69,10 @@ export default function EvolutionView() {
 
       const container = containerRef.current;
       const rect = container.getBoundingClientRect();
-      const newWidth = ((e.clientX - rect.left) / rect.width) * 100;
+      const newHeight = ((e.clientY - rect.top) / rect.height) * 100;
       
       // Constrain between 30% and 80%
-      setGraphWidth(Math.max(30, Math.min(80, newWidth)));
+      setGraphHeight(Math.max(30, Math.min(80, newHeight)));
     };
 
     const handleMouseUp = () => {
@@ -106,11 +106,11 @@ export default function EvolutionView() {
   }
 
   return (
-    <div ref={containerRef} className="h-full flex relative">
+    <div ref={containerRef} className="h-full flex flex-col relative">
       {/* Graph panel */}
       <div 
-        className="h-full overflow-hidden border-r border-border"
-        style={{ width: `${graphWidth}%` }}
+        className="w-full overflow-hidden border-b border-border"
+        style={{ height: `${graphHeight}%` }}
       >
         <EvolutionGraph 
           data={data} 
@@ -121,7 +121,7 @@ export default function EvolutionView() {
 
       {/* Resizable divider */}
       <div
-        className={`w-1 h-full bg-border hover:bg-primary cursor-col-resize transition-colors ${
+        className={`h-1 w-full bg-border hover:bg-primary cursor-row-resize transition-colors ${
           isDragging ? 'bg-primary' : ''
         }`}
         onMouseDown={handleMouseDown}
@@ -129,8 +129,8 @@ export default function EvolutionView() {
 
       {/* Program viewer panel */}
       <div 
-        className="h-full overflow-hidden"
-        style={{ width: `${100 - graphWidth}%` }}
+        className="w-full overflow-hidden"
+        style={{ height: `${100 - graphHeight}%` }}
       >
         <ProgramViewer programId={selectedProgramId} />
       </div>

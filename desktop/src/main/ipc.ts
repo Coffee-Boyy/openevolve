@@ -92,6 +92,103 @@ export function setupIpcHandlers(ipcMain: IpcMain, mainWindow: BrowserWindow) {
     return engine.getStatus();
   });
 
+  // Get evolution data for visualization
+  ipcMain.handle('evolution:getData', async (_, runId: string) => {
+    const engine = activeRuns.get(runId);
+    if (!engine) {
+      throw new Error('Run not found');
+    }
+
+    return engine.exportEvolutionData();
+  });
+
+  // Get program details by ID
+  ipcMain.handle('evolution:getProgram', async (_, runId: string, programId: string) => {
+    const engine = activeRuns.get(runId);
+    if (!engine) {
+      throw new Error('Run not found');
+    }
+
+    const program = engine.getProgram(programId);
+    if (!program) {
+      throw new Error('Program not found');
+    }
+
+    // Return program data in the format expected by ProgramViewer
+    return {
+      id: program.id,
+      code: program.code,
+      metrics: program.metrics,
+      generation: program.generation,
+      island: program.metadata.island || 0,
+      parent_id: program.parentId,
+      iteration: program.iterationFound,
+      method: program.metadata.method,
+      artifacts_json: program.artifactsJson ? JSON.parse(program.artifactsJson) : undefined,
+    };
+  });
+
+  // Get evolution logs
+  ipcMain.handle('evolution:getLogs', async (_, runId: string) => {
+    const engine = activeRuns.get(runId);
+    if (!engine) {
+      throw new Error('Run not found');
+    }
+
+    const outputDir = engine.getOutputDir();
+    const logFile = path.join(outputDir, 'evolution.log');
+
+    try {
+      // Try to read log file if it exists
+      if (await fs.access(logFile).then(() => true).catch(() => false)) {
+        const logContent = await fs.readFile(logFile, 'utf-8');
+        // Parse log file - format: [timestamp] [level] message
+        const lines = logContent.split('\n').filter(line => line.trim());
+        const logs = lines.map((line) => {
+          // Parse format: [timestamp] [level] message
+          const timestampMatch = line.match(/\[(\d+)\]/);
+          const levelMatch = line.match(/\[(INFO|WARNING|ERROR|DEBUG)\]/);
+          
+          let timestamp = Date.now() / 1000;
+          if (timestampMatch) {
+            timestamp = parseInt(timestampMatch[1], 10);
+          }
+          
+          let level: 'debug' | 'info' | 'warning' | 'error' = 'info';
+          if (levelMatch) {
+            const levelStr = levelMatch[1].toUpperCase();
+            if (levelStr === 'INFO' || levelStr === 'DEBUG') {
+              level = levelStr.toLowerCase() as 'info' | 'debug';
+            } else if (levelStr === 'WARNING') {
+              level = 'warning';
+            } else if (levelStr === 'ERROR') {
+              level = 'error';
+            }
+          }
+          
+          // Remove timestamp and level markers to get the message
+          const message = line.replace(/\[\d+\]\s*\[(INFO|WARNING|ERROR|DEBUG)\]\s*/, '').trim();
+          
+          return {
+            timestamp,
+            level,
+            message: message || line.trim(), // Fallback to full line if parsing fails
+            source: 'evolution',
+          };
+        });
+
+        return { logs };
+      } else {
+        // If no log file exists, return empty logs
+        // In the future, we could capture console.log output
+        return { logs: [] };
+      }
+    } catch (error) {
+      console.error('Failed to read log file:', error);
+      return { logs: [] };
+    }
+  });
+
   // Get configuration
   ipcMain.handle('config:get', async (_, configPath?: string) => {
     try {
@@ -105,10 +202,32 @@ export function setupIpcHandlers(ipcMain: IpcMain, mainWindow: BrowserWindow) {
   // Save configuration
   ipcMain.handle('config:save', async (_, configPath: string, config: Config) => {
     try {
+      // #region agent log
+      const logPayload = JSON.stringify({location:'ipc.ts:108',message:'config:save IPC handler called',data:{configPath:configPath,configPathType:typeof configPath,hasConfig:!!config,configKeys:config ? Object.keys(config).slice(0,5) : []},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,B,D'});
+      await fs.appendFile('/Users/connor/projects/openevolve/.cursor/debug.log', logPayload + '\n').catch(()=>{});
+      // #endregion
+      
       const { saveConfig } = await import('./engine/config');
+      
+      // #region agent log
+      const logPayload2 = JSON.stringify({location:'ipc.ts:115',message:'Before saveConfig call',data:{configPath:configPath,configPathIsUndefined:configPath===undefined},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D'});
+      await fs.appendFile('/Users/connor/projects/openevolve/.cursor/debug.log', logPayload2 + '\n').catch(()=>{});
+      // #endregion
+      
       saveConfig(config, configPath);
+      
+      // #region agent log
+      const logPayload3 = JSON.stringify({location:'ipc.ts:121',message:'After saveConfig call - success',data:{},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D'});
+      await fs.appendFile('/Users/connor/projects/openevolve/.cursor/debug.log', logPayload3 + '\n').catch(()=>{});
+      // #endregion
+      
       return { success: true };
     } catch (error) {
+      // #region agent log
+      const logPayload4 = JSON.stringify({location:'ipc.ts:128',message:'config:save error',data:{errorMessage:error instanceof Error ? error.message : String(error),errorStack:error instanceof Error ? error.stack : ''},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D'});
+      await fs.appendFile('/Users/connor/projects/openevolve/.cursor/debug.log', logPayload4 + '\n').catch(()=>{});
+      // #endregion
+      
       throw new Error(`Failed to save config: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   });

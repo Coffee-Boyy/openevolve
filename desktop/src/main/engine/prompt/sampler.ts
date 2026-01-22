@@ -3,9 +3,8 @@
  */
 
 import { PromptConfig } from '../config';
-import { Program } from '../types';
 import { TemplateManager } from './templates';
-import { formatMetrics, getFitnessScore, formatFeatureCoordinates } from '../utils';
+import { getFitnessScore, formatFeatureCoordinates } from '../utils';
 
 /**
  * Prompt sampler for code evolution
@@ -41,6 +40,8 @@ export class PromptSampler {
     previousPrograms?: any[];
     topPrograms?: any[];
     inspirations?: any[];
+    generationIdeas?: any[];
+    selectionIdeas?: any[];
     language?: string;
     evolutionRound?: number;
     diffBasedEvolution?: boolean;
@@ -56,6 +57,8 @@ export class PromptSampler {
       previousPrograms = [],
       topPrograms = [],
       inspirations = [],
+      generationIdeas = [],
+      selectionIdeas = [],
       language = 'typescript',
       evolutionRound = 0,
       diffBasedEvolution = true,
@@ -106,6 +109,15 @@ export class PromptSampler {
       featureDimensions
     );
 
+    const generationContext = this.formatIdeaMemory(
+      generationIdeas,
+      'Generation Context'
+    );
+    const selectionContext = this.formatIdeaMemory(
+      selectionIdeas,
+      'Selection Context'
+    );
+
     // Format evolution history
     const evolutionHistory = this.formatEvolutionHistory(
       previousPrograms,
@@ -136,6 +148,8 @@ export class PromptSampler {
       feature_dimensions: featureDimensions.join(', ') || 'None',
       improvement_areas: improvementAreas,
       evolution_history: evolutionHistory,
+      generation_context: generationContext,
+      selection_context: selectionContext,
       current_program: currentProgram,
       language,
       artifacts: artifactsSection,
@@ -258,6 +272,52 @@ export class PromptSampler {
     }
 
     return sections.join('\n');
+  }
+
+  /**
+   * Format idea memory for prompts
+   */
+  private formatIdeaMemory(ideas: any[], title: string): string {
+    if (!ideas || ideas.length === 0) {
+      return `## ${title}\n\nNone\n`;
+    }
+
+    const lines: string[] = [`## ${title}\n`];
+
+    const sorted = [...ideas].sort((a, b) => {
+      const aScore = typeof a.score === 'number' ? a.score : 0;
+      const bScore = typeof b.score === 'number' ? b.score : 0;
+      return bScore - aScore;
+    });
+
+    for (const idea of sorted.slice(0, 10)) {
+      const score =
+        typeof idea.score === 'number' ? idea.score.toFixed(4) : 'n/a';
+      const iteration =
+        typeof idea.iteration === 'number' ? ` (iter ${idea.iteration})` : '';
+      const summary = idea.summary || idea.title || idea.content || '';
+      const hypotheses = Array.isArray(idea.hypotheses)
+        ? idea.hypotheses
+            .slice(0, 2)
+            .map((h: any) => h.summary || h.content || '')
+            .filter(Boolean)
+        : [];
+      const pruned = Array.isArray(idea.prunedSummaries)
+        ? idea.prunedSummaries.slice(0, 2).filter(Boolean)
+        : [];
+
+      const parts = [`- [${score}]${iteration} ${summary}`.trim()];
+      if (hypotheses.length > 0) {
+        parts.push(`Hypotheses: ${hypotheses.join('; ')}`);
+      }
+      if (pruned.length > 0) {
+        parts.push(`Pruned: ${pruned.join('; ')}`);
+      }
+
+      lines.push(parts.join(' | '));
+    }
+
+    return lines.join('\n') + '\n';
   }
 
   /**
